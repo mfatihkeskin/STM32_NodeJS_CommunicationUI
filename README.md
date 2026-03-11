@@ -1,6 +1,7 @@
 # 🧪 Otomatik Test Sistemi — Demo
 
 > **Bu proje bir demo uygulamasıdır.** Gerçek bir seri üretim hattı otomatik test sisteminin basitleştirilmiş bir prototipini temsil etmektedir. Amaç; STM32 tabanlı test aparatının Node.js tabanlı bir PC uygulamasıyla USB-Serial üzerinden nasıl haberleşebileceğini göstermek ve test senaryolarının gerçek zamanlı olarak bir web arayüzünde izlenmesini sağlamaktır.
+<img width="3832" height="1861" alt="image" src="https://github.com/user-attachments/assets/812bba65-4b5c-4de7-8b20-2c34df0bcb8a" />
 
 ---
 
