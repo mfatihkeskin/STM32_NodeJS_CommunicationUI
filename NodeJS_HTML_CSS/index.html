@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="tr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Otomatik Test Sistemi</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@300;500;700&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <!-- ── Header ── -->
+    <header>
+        <div class="logo">
+            <div class="logo-icon">
+                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 2L2 7v10l10 5 10-5V7L12 2zm0 2.18L20 8.5v7L12 19.82 4 15.5v-7L12 4.18z" />
+                </svg>
+            </div>
+            <div>
+                <div class="logo-title">Otomatik Test Sistemi</div>
+                <div class="logo-sub">STM32 · USART4 · 115200 BAUD</div>
+            </div>
+        </div>
+        <div class="header-right">
+            <div class="port-badge" id="portBadge">
+                <div class="port-dot"></div>
+                <span id="portLabel">BAĞLANTI YOK</span>
+            </div>
+            <button class="start-btn" id="startBtn" onclick="sendStart()">▶ TESTI BAŞLAT</button>
+        </div>
+    </header>
+
+    <!-- ── Status bar ── -->
+    <div class="status-bar">
+        <span class="status-label">SİSTEM DURUMU</span>
+        <div class="progress-bar-wrap">
+            <div class="progress-bar-fill" id="progressFill"></div>
+        </div>
+        <span class="status-state" id="systemState">BEKLENIYOR</span>
+    </div>
+
+    <!-- ── Main ── -->
+    <main>
+
+        <!-- Scenarios -->
+        <div class="scenarios-panel">
+            <div class="panel-header">
+                <div class="panel-title">Test Senaryoları</div>
+            </div>
+
+            <div class="scenarios-list" id="scenariosList">
+                <!-- Kartlar JS ile oluşturuluyor -->
+            </div>
+
+            <!-- Fail / stopped overlay -->
+            <div class="restart-overlay" id="restartOverlay">
+                <div class="restart-msg" id="restartMsg">⚠ TEST BAŞARISIZ — SİSTEM DURDURULDU</div>
+                <button class="restart-btn" id="restartBtn">↺ TEKRAR TEST ET</button>
+            </div>
+        </div>
+
+        <!-- Log -->
+        <div class="log-panel">
+            <div class="panel-header">
+                <div class="panel-title" style="flex:1; margin:0">Seri Port Logu</div>
+                <div style="display:flex;align-items:center;gap:10px;margin-left:12px">
+                    <span class="log-count" id="logCount">0 mesaj</span>
+                    <button class="log-clear-btn" onclick="clearLog()">TEMİZLE</button>
+                </div>
+            </div>
+            <div class="log-box" id="logBox">
+                <div class="log-empty" id="logEmpty">// port bekleniyor...</div>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        // ── Senaryo tanımları ────────────────────────────────────────────────────────
+        const SCENARIOS = [
+            { num: 1, name: 'UART Haberleşme Testi', desc: 'Baud rate & frame doğrulama' },
+            { num: 2, name: 'I2C Sensör Okuma', desc: 'Slave adresi & register kontrolü' },
+            { num: 3, name: 'SPI Flash Bellek Testi', desc: 'Yazma / okuma doğrulama' },
+            { num: 4, name: 'CAN Bus İletişim Testi', desc: 'Frame ID & data byte kontrolü' },
+            { num: 5, name: 'Servo Motor Kalibrasyon', desc: 'PWM pulse & açı doğrulama' },
+            { num: 6, name: 'Buton Fiziksel Basma', desc: 'Mekanik tetik & debounce testi' },
+        ];
+
+        const TOTAL = SCENARIOS.length;
+
+        // ── State ───────────────────────────────────────────────────────────────────
+        const state = {};
+        SCENARIOS.forEach(s => { state[s.num] = { status: 'idle', ts: null }; });
+
+        let systemStopped = false;
+        let logCount = 0;
+
+        let portConnected = false;
+        let testRunning = false;
+
+        function setStartBtn(enabled) {
+            const btn = document.getElementById('startBtn');
+            btn.disabled = !enabled;
+            btn.textContent = enabled ? '▶ TESTİ BAŞLAT' : '⏳ TEST ÇALIŞIYOR...';
+        }
+
+        function sendStart() {
+            if (!portConnected) {
+                alert('Seri port bağlı değil! USB-Serial adaptörünü takın.');
+                return;
+            }
+            if (ws && ws.readyState === 1) {
+                ws.send(JSON.stringify({ type: 'startTest' }));
+                testRunning = true;
+                setStartBtn(false);
+            }
+        }
+
+        // ── Kartları oluştur ─────────────────────────────────────────────────────────
+        function buildCards() {
+            const list = document.getElementById('scenariosList');
+            list.innerHTML = '';
+
+            SCENARIOS.forEach(s => {
+                const card = document.createElement('div');
+                card.className = 'scenario-card';
+                card.id = `card${s.num}`;
+                card.innerHTML = `
+      <div class="scan"></div>
+      <div class="card-top">
+        <span class="card-num">SCENARIO_0${s.num}</span>
+        <span class="card-badge" id="badge${s.num}">IDLE</span>
+      </div>
+      <div class="card-name" id="name${s.num}">${s.name}</div>
+      <div class="card-desc">${s.desc}</div>
+      <div class="card-timestamp" id="ts${s.num}">--:--:--</div>
+      <div class="card-indicator" id="ind${s.num}">
+        ${iconIdle()}
+      </div>
+    `;
+                list.appendChild(card);
+            });
+        }
+
+        // ── İkonlar ──────────────────────────────────────────────────────────────────
+        function iconIdle() { return `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/></svg>`; }
+        function iconChecking() { return `<svg viewBox="0 0 24 24"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>`; }
+        function iconSuccess() { return `<svg viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg>`; }
+        function iconFail() { return `<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>`; }
+
+        // ── Kart güncelle ────────────────────────────────────────────────────────────
+        const BADGE_TEXT = { idle: 'IDLE', checking: 'CHECKING...', success: 'SUCCESS', fail: 'FAIL' };
+        const ICON_FN = { idle: iconIdle, checking: iconChecking, success: iconSuccess, fail: iconFail };
+
+        function updateCard(num, status, ts) {
+            const card = document.getElementById(`card${num}`);
+            const badge = document.getElementById(`badge${num}`);
+            const tsEl = document.getElementById(`ts${num}`);
+            const ind = document.getElementById(`ind${num}`);
+
+            if (!card) return;
+
+            card.className = `scenario-card ${status}`;
+            badge.textContent = BADGE_TEXT[status] || status.toUpperCase();
+            ind.innerHTML = ICON_FN[status] ? ICON_FN[status]() : iconIdle();
+
+            if (ts) tsEl.textContent = ts;
+
+            state[num].status = status;
+            state[num].ts = ts;
+        }
+
+        // ── Progress ─────────────────────────────────────────────────────────────────
+        function updateProgress() {
+            const done = Object.values(state).filter(s => s.status === 'success').length;
+            const pct = Math.round((done / TOTAL) * 100);
+            document.getElementById('progressFill').style.width = pct + '%';
+        }
+
+        // ── System state label ───────────────────────────────────────────────────────
+        function setSystemState(label, cls) {
+            const el = document.getElementById('systemState');
+            el.textContent = label;
+            el.className = 'status-state ' + (cls || '');
+        }
+
+        // ── Overlay göster ────────────────────────────────────────────────────────────
+        function showOverlay(msg) {
+            document.getElementById('restartMsg').textContent = msg;
+            document.getElementById('restartOverlay').classList.add('visible');
+        }
+
+        // ── Restart ──────────────────────────────────────────────────────────────────
+        function resetAll() {
+            systemStopped = false;
+            SCENARIOS.forEach(s => {
+                state[s.num] = { status: 'idle', ts: null };
+                updateCard(s.num, 'idle', null);
+            });
+            document.getElementById('progressFill').style.width = '0%';
+            document.getElementById('restartOverlay').classList.remove('visible');
+            setSystemState('BEKLENIYOR', '');
+            // STM32'ye START gönder
+            sendStart();
+        }
+
+        document.getElementById('restartBtn').addEventListener('click', resetAll);
+
+        // ── Mesaj işle ───────────────────────────────────────────────────────────────
+        function handleParsed(parsed, text, ts) {
+            // Test stopped
+            if (text.trim() === 'Test stopped!') {
+                systemStopped = true;
+                testRunning = false;
+                setStartBtn(true);
+                const allSuccess = SCENARIOS.every(s => state[s.num].status === 'success');
+                if (allSuccess) {
+                    setSystemState('TÜM TESTLER BAŞARILI ✓', 'done');
+                    showOverlay('✓ TÜM TESTLER TAMAMLANDI');
+                } else {
+                    showOverlay('⚠ TEST DURDURULDU');
+                }
+                return;
+            }
+
+            if (!parsed || systemStopped) return;
+
+            const { num, event } = parsed;
+            if (num < 1 || num > TOTAL) return;
+
+            if (event === 'checking') {
+                updateCard(num, 'checking', ts);
+                setSystemState(`SENARYO ${num} ÇALIŞIYOR`, 'running');
+            }
+
+            if (event === 'success') {
+                updateCard(num, 'success', ts);
+                updateProgress();
+            }
+
+            if (event === 'fail') {
+                updateCard(num, 'fail', ts);
+                systemStopped = true;
+                testRunning = false;
+                setStartBtn(true);
+                setSystemState(`SENARYO ${num} BAŞARISIZ`, 'failed');
+                showOverlay(`⚠ SENARYO ${num} BAŞARISIZ — SİSTEM DURDURULDU`);
+            }
+        }
+
+        // ── Log ──────────────────────────────────────────────────────────────────────
+        function addLog(text, ts, count, parsed) {
+            const box = document.getElementById('logBox');
+            const empty = document.getElementById('logEmpty');
+            if (empty) empty.remove();
+
+            let cls = '';
+            if (parsed) cls = parsed.event;
+            if (text.trim() === 'Test stopped!') cls = 'fail';
+
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.innerHTML =
+                `<span class="log-ts">[${ts}]</span>` +
+                `<span class="log-num">#${String(count).padStart(5, '0')}</span>` +
+                `<span class="log-msg ${cls}">${esc(text)}</span>`;
+
+            box.appendChild(entry);
+            box.scrollTop = box.scrollHeight;
+
+            logCount++;
+            document.getElementById('logCount').textContent = `${logCount} mesaj`;
+        }
+
+        function clearLog() {
+            const box = document.getElementById('logBox');
+            box.innerHTML = '<div class="log-empty" id="logEmpty">// temizlendi</div>';
+            logCount = 0;
+            document.getElementById('logCount').textContent = '0 mesaj';
+        }
+
+        function esc(s) {
+            return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        // ── Port badge ────────────────────────────────────────────────────────────────
+        function updatePortBadge(connected, portName) {
+            portConnected = connected;
+            const badge = document.getElementById('portBadge');
+            const label = document.getElementById('portLabel');
+            badge.className = 'port-badge' + (connected ? ' connected' : '');
+            label.textContent = connected ? portName : 'BAĞLANTI YOK';
+            // Test çalışmıyorsa butonu her zaman enable et
+            if (!testRunning) setStartBtn(true);
+        }
+
+        // ── WebSocket ─────────────────────────────────────────────────────────────────
+        let ws;
+
+        function connect() {
+            ws = new WebSocket(`ws://${location.host}`);
+
+            ws.onmessage = (e) => {
+                const data = JSON.parse(e.data);
+
+                if (data.type === 'portStatus') {
+                    updatePortBadge(data.connected, data.port);
+                }
+
+                if (data.type === 'startAck' && !data.success) {
+                    console.warn('START gönderilemedi:', data.error);
+                    setStartBtn(true);
+                }
+
+                if (data.type === 'message') {
+                    addLog(data.text, data.timestamp, data.count, data.parsed);
+                    handleParsed(data.parsed, data.text, data.timestamp);
+                }
+            };
+
+            ws.onclose = () => {
+                updatePortBadge(false);
+                setTimeout(connect, 2000);
+            };
+        }
+
+        // ── Init ──────────────────────────────────────────────────────────────────────
+        buildCards();
+        setStartBtn(true); // Başlangıçta görünür, port yoksa tıklayınca uyarı verir
+        connect();
+    </script>
+</body>
+
+</html>
