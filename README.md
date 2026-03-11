@@ -146,7 +146,7 @@ Bir üretim hattında çıkan her cihaz, çeşitli protokoller (UART, I2C, SPI, 
 ## 📁 Dosya Yapısı
 
 ```
-Node_USB_UART/
+NodeJS_HTML_CSS/
 │
 ├── app.js              # Ana Node.js uygulaması
 │                       # - USB-Serial port yönetimi
