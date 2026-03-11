@@ -180,7 +180,7 @@ int main(void)
 
         // Gerçek testte buraya donanım kontrolü gelecek
         // Şimdilik demo: hepsini success yap
-        uint8_t result = currentState == STATE_3 ? FAILURE : SUCCESS;
+        uint8_t result = currentState == STATE_6 ? FAILURE : SUCCESS;
 
         if (result == SUCCESS)
         {
